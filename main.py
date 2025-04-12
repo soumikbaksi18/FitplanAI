@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
-from typing import Optional
+from typing import Optional, Dict, List, Any
 import os
 import json
 import re
@@ -9,29 +9,43 @@ from datetime import datetime
 import uuid
 from dotenv import load_dotenv
 import openai
+import logging
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
+# Load environment variables
 load_dotenv()
 
-app = FastAPI(title="Fitness Challenge Generator API")
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Initialize FastAPI app
+app = FastAPI(
+    title="Fitness Challenge Generator API",
+    description="API for generating personalized fitness plans",
+    version="1.0.0",
 )
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
+# Get OpenAI API key from environment
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("No OpenAI API key found. Set the OPENAI_API_KEY environment variable.")
 
+# Set OpenAI API key
 openai.api_key = OPENAI_API_KEY
 
-
+# Define input model
 class FitnessGoalInput(BaseModel):
     age: int = Field(..., ge=16, le=80, description="User age in years")
     height: float = Field(..., ge=120, le=220, description="User height in centimeters")
@@ -44,24 +58,24 @@ class FitnessGoalInput(BaseModel):
     
     @validator('goal')
     def goal_must_be_valid(cls, v):
-        if any(keyword in v.lower() for keyword in ['illegal', 'steroids', 'drugs', 'harm']):
+        blacklist = ['illegal', 'steroids', 'drugs', 'harm', 'abuse', 'suicide']
+        if any(keyword in v.lower() for keyword in blacklist):
             raise ValueError("Goal contains inappropriate or harmful content")
         return v
 
-
+# Define response model
 class FitnessPlanResponse(BaseModel):
     plan_id: str
     created_at: str
     summary: str
-    daily_routines: dict
-    nutrition_plan: dict
-    progress_tracking: dict
+    daily_routines: Dict[str, Any]
+    nutrition_plan: Dict[str, Any]
+    progress_tracking: Dict[str, Any]
 
 def parse_json_safely(text: str) -> dict:
     """
     Attempt to parse JSON from text using multiple strategies
     """
- 
     parsing_strategies = [
         # 1. Direct JSON parsing
         lambda t: json.loads(t),
@@ -76,17 +90,16 @@ def parse_json_safely(text: str) -> dict:
         lambda t: json.loads(re.search(r'\{.*\}', t, re.DOTALL).group(0))
     ]
     
- 
     for strategy in parsing_strategies:
         try:
             return strategy(text)
         except Exception as e:
-            print(f"Parsing strategy failed: {str(e)}")
+            logger.debug(f"Parsing strategy failed: {str(e)}")
     
     # If all strategies fail, raise an exception
     raise ValueError("No valid JSON found in the response")
 
-def generate_fitness_plan(user_input: FitnessGoalInput):
+async def generate_fitness_plan(user_input: FitnessGoalInput):
     """Generate a personalized fitness plan using LLM"""
     
     # Construct the prompt for the LLM
@@ -144,7 +157,7 @@ def generate_fitness_plan(user_input: FitnessGoalInput):
     """
     
     try:
-       
+        # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-4",  # Or other model of your choice
             messages=[
@@ -166,8 +179,8 @@ def generate_fitness_plan(user_input: FitnessGoalInput):
             plan_data = parse_json_safely(response_text)
         except Exception as json_error:
             # Log full response for debugging
-            print(f"JSON Parsing Error: {json_error}")
-            print(f"Full Response Text: {response_text}")
+            logger.error(f"JSON Parsing Error: {json_error}")
+            logger.debug(f"Full Response Text: {response_text}")
             raise HTTPException(status_code=500, detail=f"Failed to parse JSON: {str(json_error)}")
         
         # Add metadata
@@ -177,13 +190,14 @@ def generate_fitness_plan(user_input: FitnessGoalInput):
         return plan_data
         
     except openai.error.OpenAIError as e:
-        print(f"OpenAI API Error: {str(e)}")
+        logger.error(f"OpenAI API Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
     except Exception as e:
-        print(f"Unexpected Error: {str(e)}")
+        logger.error(f"Unexpected Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate fitness plan: {str(e)}")
 
-@app.post("/generate-plan/", response_model=dict)
+# Define endpoints
+@app.post("/generate-plan/", response_model=Dict[str, Any], tags=["Fitness Plans"])
 async def create_fitness_plan(user_input: FitnessGoalInput):
     """
     Generate a personalized fitness plan based on user input.
@@ -191,13 +205,19 @@ async def create_fitness_plan(user_input: FitnessGoalInput):
     This endpoint accepts user physical stats, fitness goals, and timeline,
     then generates a detailed daily fitness and nutrition plan.
     """
-    plan = generate_fitness_plan(user_input)
+    plan = await generate_fitness_plan(user_input)
     return plan
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 async def health_check():
     """Endpoint to check if API is running"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# Add an endpoint to serve API documentation
+@app.get("/", tags=["Documentation"])
+async def root():
+    """Redirect to API documentation"""
+    return {"message": "Welcome to Fitness Challenge Generator API. Visit /docs for API documentation."}
 
 if __name__ == "__main__":
     import uvicorn
