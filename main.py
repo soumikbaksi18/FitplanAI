@@ -11,41 +11,41 @@ from dotenv import load_dotenv
 import openai
 import logging
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+
 load_dotenv()
 
-# Initialize FastAPI app
+
 app = FastAPI(
     title="Location-Based Fitness Challenge Generator API",
     description="API for generating personalized fitness plans based on location",
     version="1.0.0",
 )
 
-# Configure CORS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
+    allow_origins=["*"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
-# Get OpenAI API key from environment
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("No OpenAI API key found. Set the OPENAI_API_KEY environment variable.")
 
-# Set OpenAI API key
+
 openai.api_key = OPENAI_API_KEY
 
-# Define input model
+
 class FitnessGoalInput(BaseModel):
     age: int = Field(..., ge=16, le=80, description="User age in years")
     height: float = Field(..., ge=120, le=220, description="User height in centimeters")
@@ -66,7 +66,6 @@ class FitnessGoalInput(BaseModel):
     
     @validator('location')
     def location_must_be_valid(cls, v):
-        # Optional: Add validation for supported locations if needed
         return v
 
 # Define response model
@@ -83,16 +82,16 @@ def parse_json_safely(text: str) -> dict:
     Attempt to parse JSON from text using multiple strategies
     """
     parsing_strategies = [
-        # 1. Direct JSON parsing
+        
         lambda t: json.loads(t),
         
-        # 2. Extract JSON between ```json and ```
+        
         lambda t: json.loads(re.search(r'```json\s*({.*?})\s*```', t, re.DOTALL).group(1)),
         
-        # 3. Extract JSON between ``` and ```
+        
         lambda t: json.loads(re.search(r'```\s*({.*?})\s*```', t, re.DOTALL).group(1)),
         
-        # 4. Find first JSON-like object
+
         lambda t: json.loads(re.search(r'\{.*\}', t, re.DOTALL).group(0))
     ]
     
@@ -102,13 +101,12 @@ def parse_json_safely(text: str) -> dict:
         except Exception as e:
             logger.debug(f"Parsing strategy failed: {str(e)}")
     
-    # If all strategies fail, raise an exception
+  
     raise ValueError("No valid JSON found in the response")
 
 async def generate_fitness_plan(user_input: FitnessGoalInput):
     """Generate a personalized fitness plan using LLM"""
     
-    # Create a JSON template string separately to avoid nested f-string issues
     json_template = '''
     {
       "summary": "Overall plan summary and approach (string)",
@@ -149,7 +147,7 @@ async def generate_fitness_plan(user_input: FitnessGoalInput):
     }
     '''
     
-    # Construct the prompt for the LLM without nesting the full JSON template in the f-string
+   
     prompt = f"""
     Create a detailed {user_input.timeline}-month fitness plan for a {user_input.age}-year-old 
     {'person' if not user_input.gender else user_input.gender} who is {user_input.height}cm tall, 
@@ -191,7 +189,7 @@ async def generate_fitness_plan(user_input: FitnessGoalInput):
     """
     
     try:
-        # Call OpenAI API
+        
         response = openai.ChatCompletion.create(
             model="gpt-4",  # Or other model of your choice
             messages=[
@@ -205,10 +203,10 @@ async def generate_fitness_plan(user_input: FitnessGoalInput):
             presence_penalty=0
         )
         
-        # Extract response text
+       
         response_text = response.choices[0].message.content
         
-        # Parse JSON safely
+        # Parsing-the-JSON-response
         try:
             plan_data = parse_json_safely(response_text)
         except Exception as json_error:
@@ -248,11 +246,6 @@ async def health_check():
     """Endpoint to check if API is running"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-# Add an endpoint to serve API documentation
-@app.get("/", tags=["Documentation"])
-async def root():
-    """Redirect to API documentation"""
-    return {"message": "Welcome to Location-Based Fitness Challenge Generator API. Visit /docs for API documentation."}
 
 if __name__ == "__main__":
     import uvicorn
