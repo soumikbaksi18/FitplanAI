@@ -55,7 +55,7 @@ class FitnessGoalInput(BaseModel):
     timeline: int = Field(..., ge=1, le=12, description="Goal timeline in months")
     fitness_level: Optional[str] = Field(None, description="Current fitness level (beginner, intermediate, advanced)")
     limitations: Optional[str] = Field(None, description="Any physical limitations or health concerns")
-    location: str = Field(..., min_length=2, max_length=100, description="User's location to customize diet (e.g., USA, London, Delhi, Kolkata, Bangalore, Chennai)")
+    location: Optional[str] = Field(..., min_length=2, max_length=100, description="User's location to customize diet (e.g., USA, London, Delhi, Kolkata, Bangalore, Chennai)")
     
     @validator('goal')
     def goal_must_be_valid(cls, v):
